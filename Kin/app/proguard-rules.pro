@@ -1,0 +1,2 @@
+-keep class com.kin.app.data.** { *; }
+-keepclassmembers class com.kin.app.data.** { *; }

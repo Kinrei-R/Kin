@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function pairId(a, b) { return a < b ? a + '_' + b : b + '_' + a; }
+    function areFriends(other) {
+      let path = /databases/$(database)/documents/friendships/$(pairId(request.auth.uid, other));
+      return exists(path) && get(path).data.status == 'accepted';
+    }
+
+    // Holds the private email address: owner-only.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+    match /tags/{tag} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn() && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+    }
+    match /statuses/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || areFriends(uid));
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+    match /friendships/{id} {
+      allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.participants);
+      allow create: if signedIn()
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.receiverId in request.resource.data.participants
+        && id == pairId(request.resource.data.requesterId, request.resource.data.receiverId);
+      allow update: if signedIn()
+        && resource.data.receiverId == request.auth.uid
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow delete: if signedIn() && request.auth.uid in resource.data.participants;
+    }
+  }
+}
